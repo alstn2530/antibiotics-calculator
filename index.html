@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>신기능·CRRT 항생제 용량 계산기 v0.7</title>
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--text:#17202a;--muted:#64748b;--line:#dbe2ea;--blue:#2563eb;--green:#15803d;--amber:#b45309;--red:#b91c1c}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);font-family:Arial,"Noto Sans KR",sans-serif;color:var(--text)}
+.wrap{max-width:1100px;margin:auto;padding:18px}.hero{background:#17202a;color:#fff;border-radius:18px;padding:24px;margin-bottom:16px}
+.hero h1{margin:0 0 7px;font-size:25px}.hero p{margin:0;color:#cbd5e1}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}.tab{border:1px solid var(--line);background:#fff;padding:10px 14px;border-radius:10px;cursor:pointer;font-weight:700}.tab.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.panel{display:none}.panel.active{display:block}.card{background:var(--card);border-radius:16px;padding:20px;margin-bottom:16px;box-shadow:0 3px 14px rgba(0,0,0,0.05)}
+h2{font-size:19px;margin:0 0 15px} h3{font-size:16px;margin:18px 0 9px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.field label{display:block;font-weight:700;margin-bottom:6px}
+input,select{width:100%;padding:10px 11px;border:1px solid #cbd5e1;border-radius:9px;font-size:14px;background:#fff}
+.check{display:flex;gap:9px;align-items:center;font-weight:700;cursor:pointer}.check input{width:auto}
+.result{background:#eff6ff;border-left:5px solid var(--blue);padding:14px;border-radius:9px;margin-top:15px}
+.warning{background:#fff7ed;border-left:5px solid #f59e0b;padding:13px;border-radius:9px;margin-top:12px;line-height:1.55}
+.regimen{background:#f0fdf4;border-left:5px solid var(--green);padding:18px;border-radius:10px}.drug{font-weight:700;color:#166534}.dose{font-size:25px;font-weight:800;margin:7px 0}.sub{color:var(--muted);font-size:13px}
+.tdm{margin-top:16px;border:1px solid var(--line);border-radius:12px;overflow:hidden}.tdm-head{padding:15px;background:#f8fafc}.tdm-title{font-weight:800;font-size:17px}.tdm-target{margin-top:5px;color:#1d4ed8;font-weight:700}.tdm-secondary{margin-top:5px;color:var(--muted);font-size:13px}
+table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px solid #e5e7eb;text-align:left;font-size:13px;vertical-align:top}th{background:#f8fafc}
+.note{padding:13px;color:#475569;font-size:13px;line-height:1.6}.pill{display:inline-block;background:#eef2ff;color:#3730a3;padding:3px 8px;border-radius:999px;font-size:12px;font-weight:700}
+.copy{margin-top:12px;background:#2563eb;color:#fff;border:0;border-radius:8px;padding:9px 13px;cursor:pointer;font-weight:bold}
+.hidden{display:none}.muted{color:var(--muted)} ul{line-height:1.7}
+@media(max-width:700px){.grid{grid-template-columns:1fr}.wrap{padding:10px}.hero{padding:18px}.hero h1{font-size:21px}.dose{font-size:21px}th,td{font-size:12px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="hero">
+<h1>신기능·CRRT 항생제 용량 계산기 v0.7</h1>
+<p>Renal / CRRT Antibiotic Dosing Calculator · 병원 실무 맞춤형</p>
+</header>
+
+<div class="tabs">
+<button class="tab active" data-tab="calc">① 용량 계산</button>
+<button class="tab" data-tab="table">② 항생제 용량표</button>
+<button class="tab" data-tab="ref">③ 참고문헌 · 주의사항</button>
+</div>
+
+<section id="calc" class="panel active">
+<div class="card">
+<h2>① Patient / Renal Function</h2>
+<div class="grid">
+<div class="field"><label>Age (세)</label><input id="age" type="number" value="65"></div>
+<div class="field"><label>Sex</label><select id="sex"><option value="male">남성 Male</option><option value="female">여성 Female</option></select></div>
+<div class="field"><label>Weight (kg)</label><input id="weight" type="number" value="70" step="0.1"></div>
+<div class="field"><label>SCr (mg/dL)</label><input id="scr" type="number" value="1.8" step="0.1"></div>
+<div class="field"><label>Clinical State</label><select id="state"><option value="normal">일반 환자 (Normal)</option><option value="ckd">안정된 CKD (Stable CKD)</option><option value="aki">AKI</option><option value="severe">중증 감염 / 패혈증 (Severe infection)</option></select></div>
+</div>
+<div class="result"><b>Estimated CrCl (Cockcroft–Gault):</b> <span id="crcl">-</span> mL/min</div>
+<div id="akiWarn" class="warning hidden">⚠️ AKI에서는 SCr이 steady state가 아닐 수 있습니다. 계산된 CrCl만으로 용량을 결정하지 말고 SCr trajectory, urine output, residual renal function, CRRT 및 TDM을 함께 고려하세요.</div>
+</div>
+
+<div class="card">
+<h2>② CRRT / CKRT</h2>
+<label class="check"><input id="crrt" type="checkbox"> CRRT 사용</label>
+<div id="crrtArea" class="hidden">
+<h3>CRRT 설정</h3>
+<div class="grid">
+<div class="field"><label>Modality</label><select id="modality"><option>CVVH</option><option>CVVHD</option><option>CVVHDF</option></select></div>
+<div class="field"><label>Dialysate (mL/hr)</label><input id="dialysate" type="number" value="1000"></div>
+<div class="field"><label>Replacement (mL/hr)</label><input id="replacement" type="number" value="1000"></div>
+<div class="field"><label>Net UF (mL/hr)</label><input id="uf" type="number" value="100"></div>
+</div>
+<div class="result"><b>Effluent:</b> <span id="effluent">0</span> mL/hr<br><b>Effluent rate:</b> <span id="effRate">0</span> mL/kg/hr</div>
+</div>
+</div>
+
+<div class="card">
+<h2>③ Antibiotic</h2>
+<div class="field"><label>항생제</label>
+<select id="drug">
+<option value="pip">Tazoperan · Piperacillin/Tazobactam</option>
+<option value="ceftriaxone">Ceftriaxone</option>
+<option value="cefazolin">Cefazolin</option>
+<option value="cefotetan">Cefotetan</option>
+<option value="cefepime">Cefepime</option>
+<option value="mero">Meropenem</option>
+<option value="vanco">Vancomycin</option>
+<option value="linezolid">Linezolid</option>
+<option value="gent">Gentamicin</option>
+<option value="amikacin">Amikacin</option>
+<option value="teico">Teicoplanin</option>
+<option value="cipro">Ciprofloxacin</option>
+<option value="levo">Levofloxacin</option>
+<option value="tmpsmx">TMP/SMX</option>
+</select></div>
+<div class="field" style="margin-top:12px"><label>감염 중증도</label><select id="severity"><option value="standard">일반 감염</option><option value="severe">중증 감염 / Pseudomonas risk</option></select></div>
+</div>
+
+<div class="card">
+<h2>④ Recommended Regimen</h2>
+<div class="regimen">
+<div class="drug" id="drugName">Piperacillin/Tazobactam</div>
+<div class="dose" id="dose">-</div>
+<div class="sub" id="regimenNote">입력값에 따라 자동 계산</div>
+<button class="copy" id="copyBtn" type="button">Regimen 복사</button>
+</div>
+<div id="tdm"></div>
+</div>
+</section>
+
+<section id="table" class="panel">
+<div class="card">
+<h2>항생제 용량 Reference Table</h2>
+<table>
+<thead><tr><th>항생제</th><th>일반</th><th>신기능 저하</th><th>CRRT 참고</th></tr></thead>
+<tbody>
+<tr><td>Tazoperan</td><td>4.5 g q6h ~ q8h (TID~QID)</td><td>CrCl별 감량 (3.375g q6h 또는 4.5g q8h 등)</td><td>4.5 g q8h (effluent rate 및 중증도 고려)</td></tr>
+<tr><td>Ceftriaxone</td><td>1–2 g q24h</td><td>보통 조절 없음</td><td>2 g q24h</td></tr>
+<tr><td>Cefazolin</td><td>2 g q8h</td><td>CrCl별 조절</td><td>2 g q8h 등</td></tr>
+<tr><td>Cefotetan</td><td>1–2 g q12h</td><td>CrCl별 interval 연장</td><td>2 g q12–24h, 근거 제한</td></tr>
+<tr><td>Cefepime</td><td>2 g q12h</td><td>CrCl별 감량</td><td>2 g q8h 등</td></tr>
+<tr><td>Meropenem</td><td>1 g q8h</td><td>CrCl별 감량</td><td>1 g q8h; 중증 2 g q8h 고려</td></tr>
+<tr><td>Vancomycin</td><td>Loading + TDM</td><td>TDM 기반</td><td>Loading + TDM</td></tr>
+<tr><td>Linezolid</td><td>600 mg q12h</td><td>보통 조절 없음</td><td>600 mg q12h</td></tr>
+<tr><td>Gentamicin</td><td>5–7 mg/kg + TDM</td><td>interval/TDM</td><td>TDM 기반</td></tr>
+<tr><td>Amikacin</td><td>15–20 mg/kg + TDM</td><td>interval/TDM</td><td>TDM 기반</td></tr>
+<tr><td>Teicoplanin</td><td>Loading → q24h</td><td>유지용량/interval 조절</td><td>TDM 기반</td></tr>
+<tr><td>Ciprofloxacin</td><td>400 mg q12h</td><td>CrCl별 조절</td><td>400 mg q12h 등</td></tr>
+<tr><td>Levofloxacin</td><td>500/750 mg q24h</td><td>CrCl별 조절</td><td>상황별</td></tr>
+<tr><td>TMP/SMX</td><td>Indication별</td><td>CrCl별 감량</td><td>effluent/임상반응 고려</td></tr>
+</tbody>
+</table>
+<div class="note">※ Reference table은 빠른 확인용입니다. 실제 처방은 원내 항생제 프로토콜 및 감염내과/약제부 지침을 우선합니다.</div>
+</div>
+</section>
+
+<section id="ref" class="panel">
+<div class="card">
+<h2>참고문헌 · 주의사항</h2>
+<ul>
+<li>Vancomycin: serious MRSA infection에서는 AUC24/MIC 400–600 mg·h/L가 현재 권장되는 PK/PD target입니다.</li>
+<li>이 계산기는 병원 승인 처방 시스템이 아닌 교육 및 임상 참고용 prototype입니다.</li>
+<li>AKI에서는 Cockcroft–Gault CrCl을 실제 GFR과 동일하게 취급하면 안 됩니다.</li>
+<li>CRRT에서는 modality, effluent rate, residual renal function, filter 특성 및 downtime을 함께 고려해야 합니다.</li>
+<li>Cefazolin은 치료 목적 용량과 cardiac surgical prophylaxis protocol을 구분해야 합니다.</li>
+<li>Aminoglycoside extended-interval dosing은 peak/trough 방식과 구분하며 6–14시간 random level 및 nomogram을 사용하는 경우가 있습니다.</li>
+<li>Vancomycin은 특히 AKI/CRRT에서 채혈 시점과 임상상태를 함께 확인해야 합니다.</li>
+</ul>
+</div>
+</section>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+function getCrCl() {
+  const age = parseFloat($('age').value);
+  const wt = parseFloat($('weight').value);
+  const scr = parseFloat($('scr').value);
+  
+  if (isNaN(age) || isNaN(wt) || isNaN(scr) || scr <= 0) {
+    $('crcl').textContent = '-';
+    return 0;
+  }
+  let val = ((140 - age) * wt) / (72 * scr);
+  if ($('sex').value === 'female') {     val *= 0.85;   }$('crcl').textContent = val.toFixed(1);
+  $('akiWarn').classList.toggle('hidden',$('state').value !== 'aki');
+  return val;
+}
+
+function updateCRRT() {
+  const on = $('crrt').checked;
+  $('crrtArea').classList.toggle('hidden', !on);
+  if (!on) {
+    $('effluent').textContent = '0';$('effRate').textContent = '0';
+    return;
+  }
+  const dialysate = parseFloat($('dialysate').value) || 0;
+  const replacement = parseFloat($('replacement').value) || 0;
+  const uf = parseFloat($('uf').value) || 0;
+  const wt = parseFloat($('weight').value) || 1;
+  
+  const totalEffluent = dialysate + replacement + uf;
+  $('effluent').textContent = totalEffluent;
+  $('effRate').textContent = (totalEffluent / wt).toFixed(1);
+}
+
+const tdmData = {
+  vanco: `<div class="tdm"><div class="tdm-head"><div class="tdm-title">Vancomycin TDM</div><div class="tdm-target">측정 단위: µg/mL · Trough concentration 중심</div><div class="tdm-secondary">채혈 시점이 중요합니다. 반드시 trough인지 확인하세요.</div></div>
+<table><tr><th>Trough 결과</th><th>해석</th><th>권장 조절 방향</th></tr>
+<tr><td>&lt;10 µg/mL</td><td>낮은 농도 / underexposure 가능</td><td>Dose ↑ 또는 interval ↓ 고려</td></tr>
+<tr><td>10–15 µg/mL</td><td>일반적인 치료 농도 범위</td><td>임상상황에 따라 유지</td></tr>
+<tr><td>15–20 µg/mL</td><td>중증 감염에서 과거 trough target으로 사용</td><td>필요성 확인 후 유지</td></tr>
+<tr><td>&gt;20 µg/mL</td><td>높은 농도 / 축적·독성 위험</td><td>Dose ↓ 또는 interval ↑ 고려</td></tr></table>
+<div class="note"><b>참고:</b> Serious MRSA infection에서는 AUC24/MIC 400–600 mg·h/L가 현재 권장되는 PK/PD target입니다. Trough concentration은 AUC의 완전한 대체 지표가 아니며, 특히 AKI/CRRT에서는 단일 농도만으로 용량을 결정하지 않습니다.</div></div>`,
+
+  gent: `<div class="tdm"><div class="tdm-head"><div class="tdm-title">Gentamicin TDM</div><div class="tdm-target">Conventional peak 약 6–10 µg/mL · trough &lt;1 µg/mL</div><div class="tdm-secondary">감염 부위에 따라 peak target이 달라질 수 있습니다.</div></div><table><tr><th>결과</th><th>해석</th><th>권장 방향</th></tr><tr><td>Peak low + trough normal</td><td>노출 부족</td><td>Dose ↑</td></tr><tr><td>Peak high + trough normal</td><td>Peak 과다</td><td>Dose ↓</td></tr><tr><td>Peak normal + trough high</td><td>축적</td><td>Interval ↑</td></tr><tr><td>Peak low + trough high</td><td>과소·축적 동시 가능</td><td>Dose ↓ + interval ↑ 고려</td></tr></table><div class="note">Extended-interval dosing은 6–14시간 random level/nomogram을 사용하므로 이 표와 구분하세요.</div></div>`,
+
+  amikacin: `<div class="tdm"><div class="tdm-head"><div class="tdm-title">Amikacin TDM</div><div class="tdm-target">Conventional peak 25–35 µg/mL · trough 일반적으로 &lt;5 µg/mL</div></div><table><tr><th>결과</th><th>해석</th><th>권장 방향</th></tr><tr><td>Peak low + trough normal</td><td>노출 부족</td><td>Dose ↑</td></tr><tr><td>Peak high + trough normal</td><td>Peak 과다</td><td>Dose ↓</td></tr><tr><td>Peak normal + trough high</td><td>축적</td><td>Interval ↑</td></tr><tr><td>Peak low + trough high</td><td>과소·축적 동시 가능</td><td>Dose ↓ + interval ↑ 고려</td></tr></table><div class="note">Extended-interval dosing은 6–14시간 random level/nomogram을 사용합니다.</div></div>`,
+
+  teico: `<div class="tdm"><div class="tdm-head"><div class="tdm-title">Teicoplanin TDM</div><div class="tdm-target">Cmin 15–30 µg/mL: 일반/비복잡 MRSA · 20–40 µg/mL: 중증/복잡 MRSA</div><div class="tdm-secondary">Loading 후 Day 4 Cmin 확인을 고려합니다.</div></div><table><tr><th>Cmin</th><th>해석</th><th>권장 방향</th></tr><tr><td>&lt;15 µg/mL</td><td>낮음</td><td>Loading/maintenance 강화 또는 interval 단축</td></tr><tr><td>15–30 µg/mL</td><td>일반 target</td><td>유지</td></tr><tr><td>20–40 µg/mL</td><td>중증/복잡 MRSA target</td><td>유지</td></tr><tr><td>&gt;30 µg/mL</td><td>높은 노출 가능</td><td>감량/interval 연장 고려</td></tr><tr><td>&gt;40 µg/mL</td><td>과다 노출</td><td>감량/interval 연장 + 독성 평가</td></tr></table></div>`
+};
+
+function updateRegimen() {
+  const c = getCrCl();
+  const on = $('crrt').checked;
+  const sev = $('severity').value === 'severe';
+  const d = $('drug').value;
+
+  let name = '';
+  let dose = '';
+  let note = '';
+
+  if (d === 'pip') {
+    name = 'Piperacillin/Tazobactam (Tazoperan)';
+    if (on) {
+      dose = '4.5 g IV q8h (TID)';
+      note = 'CRRT 유지 시: 4.5g q8h 투여 (또는 3~4시간 extended infusion 고려) · effluent rate에 따라 조정';
+    } else if (sev) {
+      if (c >= 50) dose = '4.5 g IV q6h (QID)';
+      else if (c >= 20) dose = '4.5 g IV q8h (TID)';
+      else dose = '3.375 g IV q8h (또는 2.25 g q6h)';
+      note = '중증/녹농균 의심: 고용량 및 3~4시간 extended infusion 적극 권장';
+    } else {
+      if (c >= 50) dose = '4.5 g IV q8h (TID) ~ q6h (QID)';
+      else if (c >= 20) dose = '3.375 g IV q6h 또는 4.5 g IV q8h';
+      else dose = '2.25 g IV q8h (TID)';
+      note = '일반 감염 프로토콜 기준 용량';
+    }
+  } else if (d === 'ceftriaxone') {
+    name = 'Ceftriaxone';
+    dose = sev ? '2 g IV q24h' : '1–2 g IV q24h';
+    note = '대부분의 신기능 저하에서 routine renal adjustment 불필요';
+  } else if (d === 'cefazolin') {
+    name = 'Cefazolin';
+    dose = on ? '2 g IV q8h' : (c >= 30 ? '2 g IV q8h' : (c >= 10 ? '2 g IV q12h' : '1 g IV q24h'));
+    note = 'Cardiac surgical prophylaxis는 별도 병원 protocol 적용';
+  } else if (d === 'cefotetan') {
+    name = 'Cefotetan';
+    dose = on ? '2 g IV q12–24h' : (c >= 30 ? '1–2 g IV q12h' : (c >= 10 ? '1–2 g IV q24h' : '1–2 g IV q48h'));
+    note = 'CRRT 근거 제한';
+  } else if (d === 'cefepime') {
+    name = 'Cefepime';
+    if (on) {
+      dose = '2 g IV q8h';
+    } else if (sev) {
+      dose = c > 60 ? '2 g IV q8h' : (c >= 30 ? '2 g IV q12h' : (c >= 10 ? '2 g IV q24h' : '1 g IV q24h'));
+    } else {
+      dose = c > 60 ? '2 g IV q12h' : (c >= 30 ? '2 g IV q24h' : (c >= 10 ? '1 g IV q24h' : '500 mg IV q24h'));
+    }
+    note = 'Renal dosing 중요: accumulation 시 neurotoxicity 위험';
+  } else if (d === 'mero') {
+    name = 'Meropenem';
+    if (on) {
+      dose = sev ? '2 g IV q8h' : '1 g IV q8h';
+    } else if (sev) {
+      dose = c > 50 ? '2 g IV q8h' : (c >= 26 ? '2 g IV q12h' : (c >= 10 ? '1 g IV q12h' : '1 g IV q24h'));
+    } else {
+      dose = c > 50 ? '1 g IV q8h' : (c >= 26 ? '1 g IV q12h' : (c >= 10 ? '500 mg IV q12h' : '500 mg IV q24h'));
+    }
+    note = '중증 감염에서는 extended infusion을 기관 protocol에 따라 고려';
+  } else if (d === 'vanco') {
+    name = 'Vancomycin';
+    dose = 'Loading 20–25 mg/kg IV → maintenance by TDM';
+    note = '병원 TDM 결과를 µg/mL로 확인 · AKI/CRRT에서는 재평가 빈도 증가';
+  } else if (d === 'linezolid') {
+    name = 'Linezolid';
+    dose = '600 mg IV/PO q12h';
+    note = 'Routine renal adjustment 없음';
+  } else if (d === 'gent') {
+    name = 'Gentamicin';
+    dose = '5–7 mg/kg IV → interval by renal function + TDM';
+    note = 'Extended-interval dosing은 random level/nomogram과 구분';
+  } else if (d === 'amikacin') {
+    name = 'Amikacin';
+    dose = (sev ? '20–25' : '15–20') + ' mg/kg IV → interval by renal function + TDM';
+    note = 'Peak/trough 또는 extended-interval strategy 확인';
+  } else if (d === 'teico') {
+    name = 'Teicoplanin';
+    dose = 'Loading 6–12 mg/kg q12h → maintenance q24h + TDM';
+    note = '중증 감염은 충분한 loading 및 Cmin 확인';
+  } else if (d === 'cipro') {
+    name = 'Ciprofloxacin';
+    dose = sev ? (c < 30 ? '400 mg IV q24h' : '400 mg IV q8–12h') : (c < 30 ? '400 mg IV q24h' : '400 mg IV q12h');
+    note = '경구/정주 제형 및 indication에 따라 조정';
+  } else if (d === 'levo') {
+    name = 'Levofloxacin';
+    dose = c >= 50 ? (sev ? '750 mg IV/PO q24h' : '500–750 mg IV/PO q24h') : (c >= 20 ? '750 mg q48h 또는 500 mg → 250 mg q24h' : '750 mg loading → 500 mg q48h');
+    note = 'Indication 및 제형에 따라 확인';
+  } else if (d === 'tmpsmx') {
+    name = 'TMP/SMX';
+    dose = sev ? 'TMP 10 mg/kg/day divided q8–12h' : 'DS 1 tab q12h';
+    note = 'CrCl 및 indication에 따라 감량';
+  }
+
+  $('drugName').textContent = name;
+  $('dose').textContent = dose;
+  $('regimenNote').textContent = note;
+  $('tdm').innerHTML = tdmData[d] || '';
+}
+
+function update() {
+  updateCRRT();
+  updateRegimen();
+}
+
+// 이벤트 리스너 등록
+document.querySelectorAll('input, select').forEach(el => {
+  el.addEventListener('input', update);
+  el.addEventListener('change', update);
+});
+
+$('copyBtn').addEventListener('click', async () => {
+  const text = $('drugName').textContent + ' — ' +$('dose').textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    $('copyBtn').textContent = '복사됨 ✓';
+    setTimeout(() => $('copyBtn').textContent = 'Regimen 복사', 1200);
+  } catch (e) {
+    alert(text);
+  }
+});
+
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+    btn.classList.add('active');
+    $(btn.dataset.tab).classList.add('active');
+  });
+});
+
+// 초기 실행
+window.addEventListener('DOMContentLoaded', update);
+update();
+</script>
+</body>
+</html>
